@@ -211,6 +211,45 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 
 		void _handle_user_interrupt();
 
+		/* handlers for changes to arbitrary files */
+		class File_change_handler
+		{
+			private:
+
+				Kernel &_kernel;
+
+				Watch_handler<File_change_handler> _handler;
+
+				int _signal;
+
+				void _handle()
+				{
+					_kernel._signal.charge(_signal);
+					_kernel._resume_main();
+				}
+
+			public:
+
+				explicit File_change_handler(Kernel &kernel,
+				                             Directory const &root_dir,
+				                             Directory::Path path,
+				                             int signal)
+				:
+					_kernel { kernel },
+					_handler {
+						root_dir,
+						path,
+						*this,
+						&File_change_handler::_handle
+					},
+					_signal { signal }
+				{ }
+
+				virtual ~File_change_handler() = default;
+		};
+
+		Registry<Registered<File_change_handler>> _file_change_handlers { };
+
 		Signal _signal { _pid };
 
 		Atexit _atexit { _heap };
@@ -400,6 +439,7 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 		}
 
 		void _init_file_descriptors();
+		void _init_file_watchers();
 
 		void _clone_state_from_parent();
 

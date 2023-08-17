@@ -13,6 +13,9 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+/* libc includes */
+#include <signal.h>
+
 /* libc-internal includes */
 #include <internal/kernel.h>
 
@@ -275,7 +278,11 @@ void Libc::Kernel::_init_file_descriptors()
 		for (unsigned fd = 0; fd <= 2; fd++)
 			file_descriptor_allocator()->preserve(fd);
 	}
+}
 
+
+void Libc::Kernel::_init_file_watchers()
+{
 	/**
 	 * Call 'fn' with root directory and path to ioctl pseudo file as arguments
 	 *
@@ -314,6 +321,47 @@ void Libc::Kernel::_init_file_descriptors()
 	with_ioctl_path(stdin_fd, "interrupts", [&] (Directory &root_dir, char const *path) {
 		_user_interrupt_handler.construct(root_dir, path,
 		                                  *this, &Kernel::_handle_user_interrupt); });
+
+	/*
+	 * Watch changes to files specified via `<sig on_file_change="..."/>`
+	 */
+	_libc_env.config().for_each_sub_node("sig", [this](auto const &sig) {
+		/* parse signal */
+		int signal { 0 };
+
+		if (!sig.has_attribute("name")) {
+			error("<sig/> node is missing 'name' attribute");
+			return;
+		}
+
+		using Signal_name = String<7>;
+
+		auto signal_name { sig.attribute_value("name", Signal_name { }) };
+
+		for (int i = 1; i < NSIG; ++i) {
+			if (signal_name == Signal_name { "SIG", ::sys_signame[i] })
+				signal = i;
+		}
+
+		if (signal == 0) {
+			error("invalid 'signal' argument, cannot watch file");
+			return;
+		}
+
+		/* parse file path */
+		if (!sig.has_attribute("on_file_change")) {
+			error("<sig/> node missing 'on_file_path' attribute");
+			return;
+		}
+
+		auto path { sig.attribute_value("on_file_change", Directory::Path { }) };
+
+		/* create signaller */
+		_vfs.with_root_dir([this, signal, &path] (Directory const &root_dir) {
+			new (_heap) Registered<File_change_handler>(
+				_file_change_handlers, *this, root_dir, path, signal);
+		});
+	});
 }
 
 
@@ -506,6 +554,7 @@ Libc::Kernel::Kernel(Genode::Env &env, Genode::Allocator &heap)
 	init_signal(_signal);
 
 	_init_file_descriptors();
+	_init_file_watchers();
 
 	_kernel_ptr = this;
 

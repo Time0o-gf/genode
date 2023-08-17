@@ -1,0 +1,70 @@
+<runtime ram="32M" caps="1000" binary="init">
+
+	<events>
+		<timeout meaning="failed" sec="10" />
+		<log meaning="succeeded">
+			[init -> test-libc_signal] received SIGHUP
+			[init] child "test-libc_signal" exited with exit value 0
+		</log>
+	</events>
+
+	<requires> <timer/> </requires>
+
+	<content>
+		<rom label="dynamic_rom"/>
+		<rom label="ld.lib.so"/>
+		<rom label="libc.lib.so"/>
+		<rom label="libm.lib.so"/>
+		<rom label="posix.lib.so"/>
+		<rom label="test-libc_signal"/>
+		<rom label="vfs.lib.so"/>
+	</content>
+
+	<config>
+		<parent-provides>
+			<service name="CPU"/>
+			<service name="LOG"/>
+			<service name="PD"/>
+			<service name="RM"/>
+			<service name="ROM"/>
+			<service name="Timer"/>
+		</parent-provides>
+
+		<default-route>
+			<any-service> <parent/> </any-service>
+		</default-route>
+
+		<default caps="100"/>
+
+		<start name="dynamic_rom">
+			<resource name="RAM" quantum="2M"/>
+			<provides>
+				<service name="ROM"/>
+			</provides>
+			<config>
+				<rom name="some_file">
+					<inline></inline>
+					<sleep milliseconds="5000"/>
+					<inline>some text</inline>
+					<sleep milliseconds="200000000"/>
+				</rom>
+			</config>
+		</start>
+
+		<start name="test-libc_signal">
+			<resource name="RAM" quantum="4M"/>
+			<config>
+				<libc stdout="/dev/log"/>
+				<vfs>
+					<dir name="dev"> <log/> </dir>
+					<dir name="etc"> <rom name="some_file"/> </dir>
+				</vfs>
+				<sig name="SIGHUP" on_file_change="/etc/some_file"/>
+			</config>
+			<route>
+				<service name="ROM" label="some_file"> <child name="dynamic_rom"/> </service>
+				<any-service> <parent/> </any-service>
+			</route>
+		</start>
+	</config>
+</runtime>

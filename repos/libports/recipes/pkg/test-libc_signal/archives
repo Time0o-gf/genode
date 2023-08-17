@@ -1,0 +1,6 @@
+_/src/dynamic_rom
+_/src/init
+_/src/test-libc_signal
+_/src/libc
+_/src/posix
+_/src/vfs
